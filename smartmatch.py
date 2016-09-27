@@ -66,7 +66,7 @@ class SmartMatch:
 			student = self.students.pop()
 			# get the student's current top choice number
 			pref = student.get_current_choice()
-			if pref <= 5:  # if the student still has preferenced sessions
+			if pref < len(student.choices):  # if the student still has preferenced sessions
 				choice = student.get_choice(pref)
 				try:
 					smart_session = self.sessions[choice]
