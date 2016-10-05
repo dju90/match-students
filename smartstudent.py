@@ -31,7 +31,7 @@ class SmartStudent(Student):
 		return hash(self._id)
 
 	def __eq__(self, other):
-		return self.grade == other.grade and self.order == other.order
+		return self.grade == other.grade and self.order == other.order and self._id == other.get_id()
 
 	def __lt__(self, other):
 		if self.grade == other.grade:
