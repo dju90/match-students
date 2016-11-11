@@ -6,7 +6,7 @@ import queue
 
 # TODO: inheritance removed - reimplement basic methods
 class SmartSession():
-	def __init__(self, name, space, all_students):
+	def __init__(self, name, space):
 		self._name = name.strip().lower()
 		self.roster = queue.PriorityQueue(maxsize=int(space))
 		self.order_counter = 0

@@ -2,6 +2,7 @@
 
 # native imports
 import argparse
+import copy
 import csv
 import os
 from pprint import PrettyPrinter
@@ -15,63 +16,18 @@ from common import choice_str, sum_dictionary
 
 
 class SmartMatch:
-	def __init__(self, classes_csv, students_csv, integer_class_names):
+	def __init__(self, students, sessions, integer_class_names):
 		self.class_numbers = integer_class_names
-		self.students = self.define_students(students_csv, integer_class_names)
-		self.sessions = self.define_sessions(classes_csv)
+		self.students = students
+		self.sessions = sessions
 		self.unassigned = set([])
-
-	def define_students(self, filename, integer_class_names):
-		"""Returns a set of SmartStudent objects
-		:requires: students have a unique identifier
-				   student data is in csv format, one student per line:
-				   SID, GRADE_LEVEL, CHOICE_1, CHOICE_2, CHOICE_3, CHOICE_4, CHOICE_5
-		"""
-		selections = []
-		with open(filename, 'r') as input_file:
-			reader = csv.reader(input_file)
-			for row in reader:
-				sid = row[0]
-				try:
-					grade = int(row[1])
-				except ValueError:
-					continue
-				if integer_class_names:
-					student = SmartStudent(sid, grade, [str(int(x)) for x in row[2:]])
-				else:
-					student = SmartStudent(sid, grade, row[2:])
-				selections.append(student)
-		random.shuffle(selections)
-		return set(selections)
-
-	def define_sessions(self, filename):
-		"""
-		Returns SmartSessions in dictionary form, keyed by session name
-		:return:
-		:param filename: name of the file to be processed
-		:return: dictionary of SmartSession objects
-		:requires: class data is in csv format, one class per line:
-				   CLASSNAME, NUM_SPACES
-		"""
-		sessions = {}
-		with open(filename, 'r') as f:
-			reader = csv.reader(f)
-			for row in reader:
-				name = row[0].strip().lower()
-				try:
-					space = int(row[1])
-				except ValueError:
-					continue
-				if space > 0:
-					sessions[name] = SmartSession(name, space, self.students)
-		return sessions
+		self.tallies = None
 
 	def match(self):
 		"""
 		Performs the national medical school residency matching algorithm.
 		:return:
 		"""
-		self.prematch()
 		while self.students:  # while there are unplaced students
 			student = self.students.pop()
 			# get the student's current top choice number
@@ -107,37 +63,47 @@ class SmartMatch:
 			match_success += student.grade
 		return match_success
 
-	def prematch(self):
+	def prematch(self, top_n):
+		"""Pre-sort students into classes whose capacity is greater than
+			the total number of choices in the top n choices of each student
+		:param top_n: top n choices of each student to tally up
+		:return:
+		"""
 		# tally all choices
-		session_tallies = {}
+		top_n_tallies = {}
+		session_tallies = dict.fromkeys(self.sessions.keys(), 0)
 		for student in self.students:
-			for pref in range(0, len(student.choices)-2):
+			for pref in range(0, len(student.choices)):
 				choice = student.get_choice(pref)
 				if choice in self.sessions:
-					if choice not in session_tallies:
-						session_tallies[choice] = []
-					session_tallies[choice].append(student)
+					if pref < top_n:
+						if choice not in top_n_tallies:
+							top_n_tallies[choice] = []
+						top_n_tallies[choice].append(student)
+					session_tallies[choice] += 1
+
 		pre_placement_students = set([])
 		pre_placement_sessions = {}
-		for session in session_tallies:
+		for session in top_n_tallies:
 			session_object = self.sessions[session]
 			space = session_object.get_space()
-			total_choices = len(session_tallies[session])
+			total_choices = len(top_n_tallies[session])
 			if space >= total_choices:
-				pre_placement_students.update(session_tallies[session])
+				pre_placement_students.update(top_n_tallies[session])
 				if session_object.get_name() not in pre_placement_sessions:
 					pre_placement_sessions[session_object.get_name()] = session_object
 		while pre_placement_students:
 			student = pre_placement_students.pop()
 			pref = 0
 			placed = False
-			while not placed and pref < len(student.choices)-2:
+			while not placed and pref < top_n:
 				choice = student.get_choice(pref)
 				if choice in pre_placement_sessions:
 					pre_placement_sessions[choice].register(student)
 					self.students.remove(student)
 					placed = True
 				pref += 1
+		self.tallies = session_tallies
 
 	def results_to_file(self, file, best):
 		"""Writes the result dictionary to a file in csv format.
@@ -185,9 +151,21 @@ class SmartMatch:
 		grade_stats = self.summarize_assigned_stats()
 		unassigned_stats = self.summarize_unassigned_stats(grade_stats)
 		total_stats, total_students = self.summarize_total_stats(grade_stats)
-
 		print()
-		print("### Overall statistics ###")
+
+		print("### Selection statistics (class name: total number of student votes ###")
+		sorted_sessions = sorted(self.tallies.keys(), key=lambda x: int(x) if self.class_numbers else x)
+		most_popular = max(self.tallies.values())
+		max_class_name_len = len(sorted_sessions[len(sorted_sessions)-1])
+		for session in sorted_sessions:
+			count = self.tallies[session]
+			print(str(session).rjust(max_class_name_len) + ": ", end="")
+			for star in range(0, round(count/(1.0*most_popular)*100)):
+				print("█", end="")
+			print(" " + str(count))
+		print()
+
+		print("### Overall results ###")
 		total = sum_dictionary(total_stats)
 		for key in total_stats:
 			print(choice_str(key) + ": " + str(total_stats[key]).rjust(4) + "/" + str(total) +
@@ -290,6 +268,75 @@ class SmartMatch:
 		return assigned_stats
 
 
+def define_students(filename, integer_class_names):
+		"""Returns a set of SmartStudent objects
+		:requires: students have a unique identifier
+				   student data is in csv format, one student per line:
+				   SID, GRADE_LEVEL, CHOICE_1, CHOICE_2, CHOICE_3, CHOICE_4, CHOICE_5
+		"""
+		selections = []
+		with open(filename, 'r') as input_file:
+			reader = csv.reader(input_file)
+			for row in reader:
+				sid = row[0]
+				try:
+					grade = int(row[1])
+				except ValueError:
+					continue
+				if integer_class_names:
+					student = SmartStudent(sid, grade, [str(int(x)) for x in row[2:]])
+				else:
+					student = SmartStudent(sid, grade, row[2:])
+				selections.append(student)
+		random.shuffle(selections)
+		return set(selections)
+
+
+def define_sessions(filename):
+	"""
+	Returns SmartSessions in dictionary form, keyed by session name
+	:return:
+	:param filename: name of the file to be processed
+	:return: dictionary of SmartSession objects
+	:requires: class data is in csv format, one class per line:
+			   CLASSNAME, NUM_SPACES
+	"""
+	sessions = {}
+	with open(filename, 'r') as f:
+		reader = csv.reader(f)
+		for row in reader:
+			name = row[0].strip().lower()
+			try:
+				space = int(row[1])
+			except ValueError:
+				continue
+			if space > 0:
+				sessions[name] = SmartSession(name, space)
+	return sessions
+
+
+# Print iterations progress
+def printProgress (iteration, total, prefix = '', suffix = '', decimals = 1, barLength = 100):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        barLength   - Optional  : character length of bar (Int)
+    """
+    formatStr       = "{0:." + str(decimals) + "f}"
+    percents        = formatStr.format(100 * (iteration / float(total)))
+    filledLength    = int(round(barLength * iteration / float(total)))
+    bar             = '█' * filledLength + '-' * (barLength - filledLength)
+    sys.stdout.write('\r%s |%s| %s%s %s' % (prefix, bar, percents, '%', suffix)),
+    if iteration == total:
+        sys.stdout.write('\n')
+    sys.stdout.flush()
+
+
 def main():
 	parser = argparse.ArgumentParser(
 		description="Sort k students into m sessions with x slots per class and y ordered selections per student." +
@@ -300,6 +347,8 @@ def main():
 	parser.add_argument("-n", "--numeric",
 						help="classes are integer numbered instead of named", action="store_true")
 	parser.add_argument("--iterate", help="perform the algorithm ITERATE times", type=int, default=1)
+	parser.add_argument("--presort", help="pre-sort students into classes whose capacity is greater than " +
+						"the total number of choices in the first n choices of each student", type=int, default=3)
 	parser.add_argument("classes_csv", help="name of the class data csv file to use (relative path)")
 	parser.add_argument("students_csv", help="name of the student data csv file to use (relative path)")
 	parser.add_argument("output_csv", help="name of the (new) csv file to write to (relative path)")
@@ -308,13 +357,17 @@ def main():
 	best_match = None
 	best_result = float('Inf')
 	for i in range(0, args.iterate):
-		print(args.iterate - i)
-		smart_match = SmartMatch(args.classes_csv, args.students_csv, args.numeric)
+		students = define_students(args.students_csv, args.numeric)
+		sessions = define_sessions(args.classes_csv)
+		smart_match = SmartMatch(students, sessions, args.numeric)
+		smart_match.prematch(args.presort)
 		result = smart_match.match()
+		printProgress(i+1, args.iterate, prefix = 'Progress:', suffix = 'Complete')
 		if result < best_result:
 			best_result = result
 			best_match = smart_match
 
+	print()
 	best_match.results_to_file(args.output_csv, len(best_match.unassigned))
 	if args.verbose:
 		best_match.stats()
