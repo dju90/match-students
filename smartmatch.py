@@ -348,7 +348,7 @@ def main():
 						help="classes are integer numbered instead of named", action="store_true")
 	parser.add_argument("--iterate", help="perform the algorithm ITERATE times", type=int, default=1)
 	parser.add_argument("--presort", help="pre-sort students into classes whose capacity is greater than " +
-						"the total number of choices in the first n choices of each student", type=int)
+						"the total number of choices in the first PRESORT choices of each student", type=int)
 	parser.add_argument("classes_csv", help="name of the class data csv file to use (relative path)")
 	parser.add_argument("students_csv", help="name of the student data csv file to use (relative path)")
 	parser.add_argument("output_csv", help="name of the (new) csv file to write to (relative path)")
