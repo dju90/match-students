@@ -22,7 +22,7 @@ class SmartMatch:
 		self.unassigned = set([])
 
 	def define_students(self, filename, integer_class_names):
-		"""Returns a dictionary of SmartStudent objects
+		"""Returns a set of SmartStudent objects
 		:requires: students have a unique identifier
 				   student data is in csv format, one student per line:
 				   SID, GRADE_LEVEL, CHOICE_1, CHOICE_2, CHOICE_3, CHOICE_4, CHOICE_5
@@ -71,6 +71,7 @@ class SmartMatch:
 		Performs the national medical school residency matching algorithm.
 		:return:
 		"""
+		self.prematch()
 		while self.students:  # while there are unplaced students
 			student = self.students.pop()
 			# get the student's current top choice number
@@ -80,19 +81,19 @@ class SmartMatch:
 				try:
 					smart_session = self.sessions[choice]
 					if smart_session.has_space():
-						smart_session.add_student(student)
+						smart_session.register(student)
 					else:
 						worst_match = smart_session.pop()
 						# if the current student is preferred by the session over the worst match in the session
 						# if smart_session.get_preference(student) > smart_session.get_preference(worst_match):
 						if student.grade > worst_match.grade:
 							# replace the worst match with the current student
-							smart_session.add_student(student)
+							smart_session.register(student)
 							worst_match.incr_current_choice()
 							self.students.add(worst_match)
 						else:
 							# put back the worst match, increment the current student's preference
-							smart_session.add_student(worst_match)
+							smart_session.register(worst_match)
 							student.incr_current_choice()
 							self.students.add(student)
 				except KeyError:
@@ -105,6 +106,38 @@ class SmartMatch:
 		for student in self.unassigned:
 			match_success += student.grade
 		return match_success
+
+	def prematch(self):
+		# tally all choices
+		session_tallies = {}
+		for student in self.students:
+			for pref in range(0, len(student.choices)-2):
+				choice = student.get_choice(pref)
+				if choice in self.sessions:
+					if choice not in session_tallies:
+						session_tallies[choice] = []
+					session_tallies[choice].append(student)
+		pre_placement_students = set([])
+		pre_placement_sessions = {}
+		for session in session_tallies:
+			session_object = self.sessions[session]
+			space = session_object.get_space()
+			total_choices = len(session_tallies[session])
+			if space >= total_choices:
+				pre_placement_students.update(session_tallies[session])
+				if session_object.get_name() not in pre_placement_sessions:
+					pre_placement_sessions[session_object.get_name()] = session_object
+		while pre_placement_students:
+			student = pre_placement_students.pop()
+			pref = 0
+			placed = False
+			while not placed and pref < len(student.choices)-2:
+				choice = student.get_choice(pref)
+				if choice in pre_placement_sessions:
+					pre_placement_sessions[choice].register(student)
+					self.students.remove(student)
+					placed = True
+				pref += 1
 
 	def results_to_file(self, file, best):
 		"""Writes the result dictionary to a file in csv format.

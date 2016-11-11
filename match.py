@@ -75,7 +75,7 @@ def match(sessions, selections):
 			placed = False
 			while preference < len(student.choices) and not placed:
 				try:
-					placed = sessions[student.get_choice(preference)].add_student(student, preference)
+					placed = sessions[student.get_choice(preference)].register(student, preference)
 				except KeyError:
 					pass
 				preference += 1

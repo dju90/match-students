@@ -19,7 +19,7 @@ class SmartSession():
 	def has_space(self):
 		return not self.roster.full()
 
-	def add_student(self, smart_student):
+	def register(self, smart_student):
 		smart_student.set_order(self.order_counter)
 		self.roster.put(smart_student)
 		self.order_counter -= 1
